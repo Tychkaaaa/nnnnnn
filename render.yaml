@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: inner-ai-bot
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    envVars:
+      - key: BOT_TOKEN
+        value: 7198060994:AAGTqddzvjILvW7M4PtdY4z1dIxDSxbHeNU
+      - key: OPENAI_KEY
+        value: sk-qRXUE3tLze4QhgHWRs11MSfOIFVoCHk1vZFmd2CPizPlZTq8iG_eWVH5jkH-jzXZc_pIJo8idtt7OQwXJCB71g
