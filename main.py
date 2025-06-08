@@ -3,27 +3,53 @@ import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.types import Message
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
-import openai as openai_lib
 from questions import questions
 
-load_dotenv()
+from fastapi import FastAPI, Request
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
+# --- Загрузка переменных ---
+load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_KEY = os.getenv("OPENAI_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # например: https://your-app-name.onrender.com
 
-# Настройка логирования
+# --- Настройка логов ---
 logging.basicConfig(level=logging.INFO)
 
-# Создание бота и диспетчера
+# --- Создание бота и диспетчера ---
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
+openai = AsyncOpenAI(api_key=OPENAI_KEY)
 
-# Настройка ключа OpenAI
-openai_lib.api_key = OPENAI_KEY
-
-# Словарь для хранения ответов пользователей
 user_answers = {}
+
+# --- FastAPI приложение ---
+app = FastAPI()
+
+# --- Вебхук FastAPI обработчик ---
+@app.on_event("startup")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info(f"Webhook set to {WEBHOOK_URL}")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await bot.delete_webhook()
+    logging.info("Webhook deleted")
+
+# --- Webhook обработчик запросов от Telegram ---
+async def handler(request: Request):
+    return await SimpleRequestHandler(dispatcher=dp, bot=bot).handle(request)
+
+app.post("/")(handler)  # POST-запросы от Telegram приходят сюда
+
+# --- Логика бота ---
 
 @dp.message(lambda message: message.text == "/start")
 async def start(message: Message):
@@ -51,15 +77,11 @@ async def generate_portrait(user_id, message):
     answers = user_answers[user_id]
     prompt = "Создай психологический портрет человека на основе его ответов: " + "; ".join(answers)
     try:
-        response = await openai_lib.ChatCompletion.acreate(
-            model="gpt-3.5-turbo",
+        response = await openai.chat.completions.create(
+            model="gpt-4-turbo",
             messages=[{"role": "user", "content": prompt}]
         )
-        ai_text = response.choices[0].message["content"]
+        ai_text = response.choices[0].message.content
         await message.answer(f"Вот твой AI-портрет:\n\n{ai_text}")
     except Exception as e:
         await message.answer(f"⚠️ Ошибка при создании портрета:\n{e}")
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(dp.start_polling(bot))
